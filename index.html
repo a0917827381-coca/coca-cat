@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>專屬合成貓咪遊戲</title>
+    <style>
+        body { 
+            margin: 0; padding: 0; background-color: #fdfbf7; 
+            display: flex; flex-direction: column; align-items: center; 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            overflow: hidden; touch-action: none; 
+        }
+        #ui { 
+            width: 100%; max-width: 450px; display: flex; justify-content: space-between; 
+            padding: 15px 25px; box-sizing: border-box; 
+            font-size: 1.2rem; font-weight: bold; color: #4a4a4a; 
+        }
+        .score-box { background: #fff; padding: 5px 15px; border-radius: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+        .next-box { display: flex; align-items: center; gap: 10px; }
+        #game-container { 
+            position: relative; width: 100%; max-width: 450px; height: 80vh; max-height: 750px; 
+            background-color: #fff; border-top: 5px solid transparent; 
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1); overflow: hidden; 
+            border-radius: 0 0 15px 15px;
+        }
+        canvas { display: block; width: 100%; height: 100%; }
+        #game-over { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(255, 255, 255, 0.9); display: none; 
+            flex-direction: column; justify-content: center; align-items: center; z-index: 10; 
+        }
+        #game-over h2 { color: #ff6b6b; font-size: 2rem; margin-bottom: 10px; }
+        #game-over p { color: #555; font-size: 1.2rem; }
+        button { 
+            margin-top: 25px; padding: 12px 30px; font-size: 1.1rem; border: none; 
+            border-radius: 25px; background-color: #ffb3b3; color: #fff; 
+            cursor: pointer; font-weight: bold; box-shadow: 0 4px 10px rgba(255, 179, 179, 0.5);
+            transition: transform 0.1s;
+        }
+        button:active { transform: scale(0.95); }
+    </style>
+    <!-- 引入 Matter.js 物理引擎 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+</head>
+<body>
+    <div id="ui">
+        <div class="score-box">分數: <span id="score">0</span></div>
+        <div class="next-box">下一個: <img id="next-preview" src="" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover;"></div>
+    </div>
+    <div id="game-container">
+        <div id="game-over">
+            <h2>箱子滿了！</h2>
+            <p>獲得分數: <span id="final-score">0</span></p>
+            <button onclick="location.reload()">再玩一次</button>
+        </div>
+    </div>
+
+    <script>
+        // 定義 7 個階段的貓咪屬性
+        // 檔名必須與上傳的圖片完全一致
+        const catConfig = [
+            { level: 1, radius: 22, img: 'cat1.png', score: 2 },
+            { level: 2, radius: 36, img: 'cat2.png', score: 4 },
+            { level: 3, radius: 55, img: 'cat3.png', score: 8 },
+            { level: 4, radius: 80, img: 'cat4.png', score: 16 },
+            { level: 5, radius: 105, img: 'cat5.png', score: 32 },
+            { level: 6, radius: 135, img: 'cat6.png', score: 64 },
+            { level: 7, radius: 175, img: 'cat7.png', score: 128 }
+        ];
+
+        // 預載圖片以防止渲染延遲
+        const catImages = {};
+        catConfig.forEach(cat => {
+            const img = new Image();
+            img.src = cat.img;
+            catImages[cat.level] = img;
+        });
+
+        // 初始化物理引擎
+        const Engine = Matter.Engine,
+              Render = Matter.Render,
+              Runner = Matter.Runner,
+              Bodies = Matter.Bodies,
+              Composite = Matter.Composite,
+              Events = Matter.Events;
+
+        const engine = Engine.create();
+        const world = engine.world;
+        const container = document.getElementById('game-container');
+        const width = container.clientWidth;
+        const height = container.clientHeight;
+
+        const render = Render.create({
+            element: container,
+            engine: engine,
+            options: { width: width, height: height, wireframes: false, background: 'transparent' }
+        });
+
+        Render.run(render);
+        const runner = Runner.create();
+        Runner.run(runner, engine);
+
+        // 建立牆壁邊界
+        const wallOptions = { isStatic: true, render: { fillStyle: '#e0e0e0' } };
+        const ground = Bodies.rectangle(width / 2, height + 30, width, 60, wallOptions);
+        const leftWall = Bodies.rectangle(-30, height / 2, 60, height, wallOptions);
+        const rightWall = Bodies.rectangle(width + 30, height / 2, 60, height, wallOptions);
+        Composite.add(world, [ground, leftWall, rightWall]);
+
+        // 遊戲狀態變數
+        let score = 0;
+        let currentLevel = 1;
+        let nextLevel = Math.floor(Math.random() * 3) + 1; // 隨機出 1~3 級
+        let isGameOver = false;
+        let canDrop = true;
+
+        const scoreEl = document.getElementById('score');
+        const nextPreviewEl = document.getElementById('next-preview');
+        nextPreviewEl.src = catConfig[nextLevel - 1].img;
+
+        // 創建貓咪物理球體
+        function createCat(x, y, level, isSensor = false) {
+            const config = catConfig[level - 1];
+            const cat = Bodies.circle(x, y, config.radius, {
+                restitution: 0.1, // 降低彈性避免彈飛
+                friction: 0.5,    // 增加摩擦力讓堆疊穩定
+                density: 0.05,
+                label: `cat-${level}`,
+                isSensor: isSensor // 掉落前設為感測器不碰撞
+            });
+            cat.catLevel = level;
+            Composite.add(world, cat);
+            return cat;
+        }
+
+        // 核心視覺邏輯：將方形圖片裁切成完美的圓形貼合物理碰撞箱
+        Events.on(render, 'afterRender', function() {
+            const context = render.context;
+            const bodies = Composite.allBodies(engine.world);
+
+            // 畫警戒線
+            context.beginPath();
+            context.moveTo(0, 100);
+            context.lineTo(width, 100);
+            context.strokeStyle = 'rgba(255, 107, 107, 0.4)';
+            context.setLineDash([8, 8]);
+            context.lineWidth = 2;
+            context.stroke();
+            context.setLineDash([]);
+
+            for (let i = 0; i < bodies.length; i++) {
+                const body = bodies[i];
+                if (body.label.startsWith('cat-')) {
+                    const level = body.catLevel;
+                    const img = catImages[level];
+                    const r = body.circleRadius;
+
+                    if (img && img.complete) {
+                        context.save();
+                        context.translate(body.position.x, body.position.y);
+                        context.rotate(body.angle);
+                        
+                        // 建立圓形裁切遮罩，讓所有貓咪圖片都變成完美的圓形泡泡
+                        context.beginPath();
+                        context.arc(0, 0, r, 0, 2 * Math.PI);
+                        context.clip();
+                        
+                        // 繪製圖片填滿圓形 (稍微放大一點確保沒有白邊)
+                        context.drawImage(img, -r, -r, r * 2, r * 2);
+                        context.restore();
+                    }
+                }
+            }
+        });
+
+        // 使用者互動控制 (支援滑鼠與手機觸控)
+        let currentCat = null;
+        container.addEventListener('pointermove', (e) => {
+            if (isGameOver || !canDrop) return;
+            const rect = container.getBoundingClientRect();
+            let x = e.clientX - rect.left;
+            
+            const r = catConfig[currentLevel - 1].radius;
+            if (x < r) x = r;
+            if (x > width - r) x = width - r;
+
+            if (!currentCat) {
+                currentCat = createCat(x, 40, currentLevel, true);
+                Matter.Body.setStatic(currentCat, true);
+            } else {
+                Matter.Body.setPosition(currentCat, { x: x, y: 40 });
+            }
+        });
+
+        container.addEventListener('pointerdown', (e) => {
+            if (isGameOver || !canDrop || !currentCat) return;
+            
+            // 釋放重力
+            Matter.Body.setStatic(currentCat, false);
+            currentCat.isSensor = false;
+            currentCat = null;
+            canDrop = false;
+
+            // 1秒冷卻後產生下一隻
+            setTimeout(() => {
+                currentLevel = nextLevel;
+                nextLevel = Math.floor(Math.random() * 3) + 1;
+                nextPreviewEl.src = catConfig[nextLevel - 1].img;
+                canDrop = true;
+            }, 1000); 
+        });
+
+        // 碰撞與合成判定
+        Events.on(engine, 'collisionStart', (event) => {
+            const pairs = event.pairs;
+            const bodiesToRemove = [];
+            const bodiesToAdd = [];
+
+            for (let i = 0; i < pairs.length; i++) {
+                const bodyA = pairs[i].bodyA;
+                const bodyB = pairs[i].bodyB;
+
+                if (bodyA.label === bodyB.label && bodyA.label.startsWith('cat-')) {
+                    const level = bodyA.catLevel;
+                    
+                    if (bodiesToRemove.includes(bodyA) || bodiesToRemove.includes(bodyB)) continue;
+
+                    if (level < 7) { // 7級是最大，不再合成
+                        bodiesToRemove.push(bodyA, bodyB);
+                        const newX = (bodyA.position.x + bodyB.position.x) / 2;
+                        const newY = (bodyA.position.y + bodyB.position.y) / 2;
+                        bodiesToAdd.push({ x: newX, y: newY, level: level + 1 });
+                        
+                        score += catConfig[level].score;
+                        scoreEl.innerText = score;
+                    }
+                }
+            }
+
+            if (bodiesToRemove.length > 0) {
+                Composite.remove(world, bodiesToRemove);
+                bodiesToAdd.forEach(data => {
+                    createCat(data.x, data.y, data.level);
+                });
+            }
+        });
+
+        // 失敗判定：檢查是否溢出紅線
+        setInterval(() => {
+            if (isGameOver) return;
+            const bodies = Composite.allBodies(engine.world);
+            for (let i = 0; i < bodies.length; i++) {
+                const body = bodies[i];
+                if (body.label.startsWith('cat-') && !body.isStatic) {
+                    // 如果堆疊高度高過紅線(100)，且處於靜止狀態
+                    if (body.position.y < 100 && Math.abs(body.velocity.y) < 0.2) {
+                        isGameOver = true;
+                        document.getElementById('game-over').style.display = 'flex';
+                        document.getElementById('final-score').innerText = score;
+                        break;
+                    }
+                }
+            }
+        }, 1500);
+    </script>
+</body>
+</html>
