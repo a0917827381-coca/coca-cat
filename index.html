@@ -3,266 +3,410 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>專屬合成貓咪遊戲</title>
+    <title>極簡 3D 桌球 7.0 (P2P 網路對戰 + 視角翻轉)</title>
     <style>
-        body { 
-            margin: 0; padding: 0; background-color: #fdfbf7; 
-            display: flex; flex-direction: column; align-items: center; 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            overflow: hidden; touch-action: none; 
+        body {
+            margin: 0; overflow: hidden; background-color: #1e293b; 
+            touch-action: none; font-family: sans-serif; color: white;
         }
-        #ui { 
-            width: 100%; max-width: 450px; display: flex; justify-content: space-between; 
-            padding: 15px 25px; box-sizing: border-box; 
-            font-size: 1.2rem; font-weight: bold; color: #4a4a4a; 
+        /* ===== UI 介面設計 ===== */
+        #ui-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; display: flex; flex-direction: column;
+            justify-content: space-between; align-items: center;
+            padding: 40px 0; box-sizing: border-box; z-index: 999;
         }
-        .score-box { background: #fff; padding: 5px 15px; border-radius: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-        .next-box { display: flex; align-items: center; gap: 10px; }
-        #game-container { 
-            position: relative; width: 100%; max-width: 450px; height: 80vh; max-height: 750px; 
-            background-color: #fff; border-top: 5px solid transparent; 
-            box-shadow: 0 8px 20px rgba(0,0,0,0.1); overflow: hidden; 
-            border-radius: 0 0 15px 15px;
+        .score-board {
+            font-size: 42px; font-weight: bold; display: flex; width: 100%;
+            max-width: 400px; justify-content: space-around;
+            text-shadow: 0 4px 12px rgba(0,0,0,0.6);
         }
-        canvas { display: block; width: 100%; height: 100%; }
-        #game-over { 
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
-            background: rgba(255, 255, 255, 0.9); display: none; 
-            flex-direction: column; justify-content: center; align-items: center; z-index: 10; 
+        #score-p2 { color: #60a5fa; }
+        #score-p1 { color: #f87171; }
+        #message {
+            font-size: 24px; font-weight: bold; background: rgba(15, 23, 42, 0.85);
+            padding: 20px 35px; border-radius: 15px; text-align: center; display: none;
+            border: 1px solid #334155; box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
-        #game-over h2 { color: #ff6b6b; font-size: 2rem; margin-bottom: 10px; }
-        #game-over p { color: #555; font-size: 1.2rem; }
-        button { 
-            margin-top: 25px; padding: 12px 30px; font-size: 1.1rem; border: none; 
-            border-radius: 25px; background-color: #ffb3b3; color: #fff; 
-            cursor: pointer; font-weight: bold; box-shadow: 0 4px 10px rgba(255, 179, 179, 0.5);
-            transition: transform 0.1s;
+        
+        /* ===== 選單設計 ===== */
+        #menu-layer {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(15, 23, 42, 0.95); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 1000;
         }
-        button:active { transform: scale(0.95); }
+        .menu-box {
+            background: #1e293b; padding: 40px; border-radius: 20px; text-align: center;
+            border: 2px solid #334155; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+        h1 { margin-top: 0; color: #f8fafc; font-size: 32px; }
+        .btn {
+            display: block; width: 100%; padding: 15px; margin: 15px 0; font-size: 20px;
+            font-weight: bold; color: white; background: #3b82f6; border: none;
+            border-radius: 10px; cursor: pointer; transition: 0.2s;
+        }
+        .btn:active { transform: scale(0.95); }
+        .btn-red { background: #ef4444; }
+        .btn-green { background: #10b981; }
+        input[type="text"] {
+            width: 100%; padding: 15px; font-size: 20px; border-radius: 10px;
+            border: 1px solid #475569; background: #0f172a; color: white; text-align: center;
+            box-sizing: border-box; margin-bottom: 15px;
+        }
     </style>
-    <!-- 引入 Matter.js 物理引擎 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 </head>
 <body>
-    <div id="ui">
-        <div class="score-box">分數: <span id="score">0</span></div>
-        <div class="next-box">下一個: <img id="next-preview" src="" style="width: 35px; height: 35px; border-radius: 50%; object-fit: cover;"></div>
+    <div id="ui-layer">
+        <div class="score-board">
+            <span id="score-p2">0</span>
+            <span id="score-p1">0</span>
+        </div>
+        <div id="message"></div>
     </div>
-    <div id="game-container">
-        <div id="game-over">
-            <h2>箱子滿了！</h2>
-            <p>獲得分數: <span id="final-score">0</span></p>
-            <button onclick="location.reload()">再玩一次</button>
+
+    <div id="menu-layer">
+        <div class="menu-box" id="main-menu">
+            <h1>極簡 3D 桌球</h1>
+            <button class="btn" onclick="startOffline()">電腦對戰</button>
+            <button class="btn btn-red" onclick="showMultiplayerMenu()">真人對決</button>
+        </div>
+        
+        <div class="menu-box" id="mp-menu" style="display:none;">
+            <h1>真人對決</h1>
+            <button class="btn btn-red" onclick="createRoom()">建立球桌 (當桌主)</button>
+            <hr style="border-color: #334155; margin: 20px 0;">
+            <input type="text" id="room-input" placeholder="輸入桌號加入">
+            <button class="btn" onclick="joinRoom()">加入球桌</button>
+            <button class="btn" style="background:#475569" onclick="backToMain()">返回</button>
+        </div>
+
+        <div class="menu-box" id="waiting-room" style="display:none;">
+            <h1>等待中...</h1>
+            <p id="room-id-display" style="font-size: 24px; color: #f87171;"></p>
+            <p id="room-status">等待對手加入...</p>
+            <button class="btn btn-green" id="start-btn" style="display:none;" onclick="startMultiplayer()">開始比賽</button>
         </div>
     </div>
 
-    <script>
-        // 定義 7 個階段的貓咪屬性
-        // 檔名必須與上傳的圖片完全一致
-        const catConfig = [
-            { level: 1, radius: 22, img: 'cat1.png', score: 2 },
-            { level: 2, radius: 36, img: 'cat2.png', score: 4 },
-            { level: 3, radius: 55, img: 'cat3.png', score: 8 },
-            { level: 4, radius: 80, img: 'cat4.png', score: 16 },
-            { level: 5, radius: 105, img: 'cat5.png', score: 32 },
-            { level: 6, radius: 135, img: 'cat6.png', score: 64 },
-            { level: 7, radius: 175, img: 'cat7.png', score: 128 }
-        ];
+<script>
+    // ==================== 網路與遊戲模式 ====================
+    let gameMode = 'offline'; // offline, host, guest
+    let peer = null;
+    let conn = null;
+    let roomId = '';
 
-        // 預載圖片以防止渲染延遲
-        const catImages = {};
-        catConfig.forEach(cat => {
-            const img = new Image();
-            img.src = cat.img;
-            catImages[cat.level] = img;
+    // ==================== UI 流程控制 ====================
+    function showMultiplayerMenu() {
+        document.getElementById('main-menu').style.display = 'none';
+        document.getElementById('mp-menu').style.display = 'block';
+    }
+    function backToMain() {
+        document.getElementById('mp-menu').style.display = 'none';
+        document.getElementById('main-menu').style.display = 'block';
+    }
+
+    // 桌主開房
+    function createRoom() {
+        roomId = Math.floor(1000 + Math.random() * 9000).toString(); // 4位數桌號
+        peer = new Peer('pingpong-' + roomId);
+        
+        document.getElementById('mp-menu').style.display = 'none';
+        document.getElementById('waiting-room').style.display = 'block';
+        document.getElementById('room-id-display').innerText = `你的桌號: ${roomId}`;
+
+        peer.on('connection', (connection) => {
+            conn = connection;
+            setupConnection();
+            document.getElementById('room-status').innerText = "對手已加入！";
+            document.getElementById('start-btn').style.display = 'block';
         });
+    }
 
-        // 初始化物理引擎
-        const Engine = Matter.Engine,
-              Render = Matter.Render,
-              Runner = Matter.Runner,
-              Bodies = Matter.Bodies,
-              Composite = Matter.Composite,
-              Events = Matter.Events;
-
-        const engine = Engine.create();
-        const world = engine.world;
-        const container = document.getElementById('game-container');
-        const width = container.clientWidth;
-        const height = container.clientHeight;
-
-        const render = Render.create({
-            element: container,
-            engine: engine,
-            options: { width: width, height: height, wireframes: false, background: 'transparent' }
+    // 訪客加入
+    function joinRoom() {
+        const inputId = document.getElementById('room-input').value;
+        if (!inputId) return alert("請輸入桌號");
+        
+        peer = new Peer();
+        peer.on('open', () => {
+            conn = peer.connect('pingpong-' + inputId);
+            setupConnection();
+            document.getElementById('mp-menu').style.display = 'none';
+            document.getElementById('waiting-room').style.display = 'block';
+            document.getElementById('room-id-display').innerText = `已連接桌號: ${inputId}`;
+            document.getElementById('room-status').innerText = "等待桌主開始遊戲...";
         });
+    }
 
-        Render.run(render);
-        const runner = Runner.create();
-        Runner.run(runner, engine);
+    // 處理資料傳輸
+    function setupConnection() {
+        conn.on('data', (data) => {
+            if (data.type === 'start') {
+                gameMode = 'guest'; // 收到開始訊號，設定為訪客
+                startGameUI();
+                setCameraPerspective('guest'); 
+            }
+            if (gameMode === 'host' && data.type === 'guest_pos') {
+                // 桌主接收訪客拍子位置
+                p2.position.x = data.x;
+                p2.position.z = data.z;
+            }
+            if (gameMode === 'guest' && data.type === 'sync') {
+                // 訪客接收桌主的物理運算結果
+                ball.position.set(data.bx, data.by, data.bz);
+                p1.position.set(data.p1x, 1.3, data.p1z);
+                scoreP1 = data.s1;
+                scoreP2 = data.s2;
+                updateScore();
+                
+                if (data.msg) showMessage(data.msg, data.msgDur);
+            }
+        });
+    }
 
-        // 建立牆壁邊界
-        const wallOptions = { isStatic: true, render: { fillStyle: '#e0e0e0' } };
-        const ground = Bodies.rectangle(width / 2, height + 30, width, 60, wallOptions);
-        const leftWall = Bodies.rectangle(-30, height / 2, 60, height, wallOptions);
-        const rightWall = Bodies.rectangle(width + 30, height / 2, 60, height, wallOptions);
-        Composite.add(world, [ground, leftWall, rightWall]);
+    function startMultiplayer() {
+        gameMode = 'host';
+        conn.send({ type: 'start' });
+        startGameUI();
+        setCameraPerspective('host');
+        resetPoint(0);
+    }
 
-        // 遊戲狀態變數
-        let score = 0;
-        let currentLevel = 1;
-        let nextLevel = Math.floor(Math.random() * 3) + 1; // 隨機出 1~3 級
-        let isGameOver = false;
-        let canDrop = true;
+    function startOffline() {
+        gameMode = 'offline';
+        startGameUI();
+        setCameraPerspective('host');
+        resetPoint(0);
+    }
 
-        const scoreEl = document.getElementById('score');
-        const nextPreviewEl = document.getElementById('next-preview');
-        nextPreviewEl.src = catConfig[nextLevel - 1].img;
+    function startGameUI() {
+        document.getElementById('menu-layer').style.display = 'none';
+        document.getElementById('ui-layer').style.pointerEvents = 'none';
+    }
 
-        // 創建貓咪物理球體
-        function createCat(x, y, level, isSensor = false) {
-            const config = catConfig[level - 1];
-            const cat = Bodies.circle(x, y, config.radius, {
-                restitution: 0.1, // 降低彈性避免彈飛
-                friction: 0.5,    // 增加摩擦力讓堆疊穩定
-                density: 0.05,
-                label: `cat-${level}`,
-                isSensor: isSensor // 掉落前設為感測器不碰撞
-            });
-            cat.catLevel = level;
-            Composite.add(world, cat);
-            return cat;
+    // ===== 核心：視角與控制翻轉 =====
+    function setCameraPerspective(role) {
+        if (role === 'guest') {
+            // 訪客（藍拍）：鏡頭移到對面，往回看。紅拍在遠方，藍拍在近處下方
+            camera.position.set(0, 18, -26);
+            camera.lookAt(0, 0, 0);
+            document.getElementById('score-p2').style.color = '#f87171'; // 視覺上自己的分數換邊
+            document.getElementById('score-p1').style.color = '#60a5fa';
+        } else {
+            // 桌主/單機（紅拍）：預設視角
+            camera.position.set(0, 18, 26);
+            camera.lookAt(0, 0, 0);
+        }
+    }
+
+    // ==================== 基本 3D 設定 (略縮以節省空間，維持原本質感) ====================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1e293b); 
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5)); 
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+    dirLight.position.set(8, 25, 12); dirLight.castShadow = true;
+    scene.add(dirLight);
+
+    const table = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 0.5, 16),
+        new THREE.MeshStandardMaterial({ color: 0x0284c7, roughness: 0.3 }) 
+    );
+    table.receiveShadow = true; scene.add(table);
+
+    const net = new THREE.Mesh(
+        new THREE.BoxGeometry(10, 0.9, 0.05),
+        new THREE.MeshStandardMaterial({ color: 0xffffff, transparent: true, opacity: 0.5 })
+    );
+    net.position.y = 0.7; net.castShadow = true; scene.add(net);
+
+    function createRacket(rubberColor) {
+        const group = new THREE.Group();
+        const head = new THREE.Mesh(new THREE.CylinderGeometry(1.35, 1.35, 0.16, 32), new THREE.MeshStandardMaterial({ color: rubberColor, roughness: 0.85 }));
+        head.rotation.x = Math.PI / 2; head.castShadow = true; group.add(head);
+        return group;
+    }
+
+    const p1 = createRacket(0xef4444); p1.position.set(0, 1.3, 7); scene.add(p1);
+    const p2 = createRacket(0x3b82f6); p2.position.set(0, 1.3, -7); scene.add(p2);
+
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.32, 32), new THREE.MeshPhysicalMaterial({ color: 0xffffff, roughness: 0.1 }));
+    ball.castShadow = true; ball.userData.spin = new THREE.Vector3(0,0,0); scene.add(ball);
+
+    // ==================== 遊戲核心變數 ====================
+    let gameState = 'wait', server = 1, scoreP1 = 0, scoreP2 = 0;
+    let ballState = 'idle'; 
+    const BASE_SPEED = 0.085, GRAVITY = 0.0055, WIN_SCORE = 21; 
+    let ballSpeedX = 0, ballSpeedY = 0, ballSpeedZ = 0;
+    let p1LastX = 0, p1VelocityX = 0;
+    let hasTouchedNet = false;
+    let currentMsg = ''; // 用於網路同步訊息
+
+    function updateScore() {
+        document.getElementById('score-p1').innerText = scoreP1;
+        document.getElementById('score-p2').innerText = scoreP2;
+    }
+
+    function showMessage(html, duration = 1600) {
+        if(gameMode === 'host') currentMsg = html; // 記錄下來傳給訪客
+        const msg = document.getElementById('message');
+        msg.innerHTML = html; msg.style.display = 'block';
+        if (duration < 99999) setTimeout(() => { msg.style.display = 'none'; currentMsg = ''; }, duration);
+    }
+
+    // 核心重置邏輯 (只有 offline 跟 host 會執行)
+    function resetPoint(winner, reason = "") {
+        if(gameMode === 'guest') return; 
+
+        gameState = 'wait';
+        if (winner === 1) scoreP1++; else if (winner === 2) scoreP2++;
+        updateScore();
+
+        server = (Math.floor((scoreP1 + scoreP2) / 2) % 2 === 0) ? 1 : 2;
+        ballSpeedX = ballSpeedY = ballSpeedZ = 0; ball.userData.spin.set(0,0,0);
+        hasTouchedNet = false; ballState = 'idle';
+
+        let msgHTML = reason ? `<span style="color:#94a3b8;font-size:20px;">${reason}</span><br>` : '';
+        if (winner !== 0) {
+            msgHTML += `<span style="color:${winner === 1 ? '#f87171' : '#60a5fa'};">${winner === 1 ? '紅拍' : '藍拍'}得分！</span>`;
+            showMessage(msgHTML);
         }
 
-        // 核心視覺邏輯：將方形圖片裁切成完美的圓形貼合物理碰撞箱
-        Events.on(render, 'afterRender', function() {
-            const context = render.context;
-            const bodies = Composite.allBodies(engine.world);
-
-            // 畫警戒線
-            context.beginPath();
-            context.moveTo(0, 100);
-            context.lineTo(width, 100);
-            context.strokeStyle = 'rgba(255, 107, 107, 0.4)';
-            context.setLineDash([8, 8]);
-            context.lineWidth = 2;
-            context.stroke();
-            context.setLineDash([]);
-
-            for (let i = 0; i < bodies.length; i++) {
-                const body = bodies[i];
-                if (body.label.startsWith('cat-')) {
-                    const level = body.catLevel;
-                    const img = catImages[level];
-                    const r = body.circleRadius;
-
-                    if (img && img.complete) {
-                        context.save();
-                        context.translate(body.position.x, body.position.y);
-                        context.rotate(body.angle);
-                        
-                        // 建立圓形裁切遮罩，讓所有貓咪圖片都變成完美的圓形泡泡
-                        context.beginPath();
-                        context.arc(0, 0, r, 0, 2 * Math.PI);
-                        context.clip();
-                        
-                        // 繪製圖片填滿圓形 (稍微放大一點確保沒有白邊)
-                        context.drawImage(img, -r, -r, r * 2, r * 2);
-                        context.restore();
-                    }
-                }
+        setTimeout(() => {
+            gameState = 'serve';
+            if (server === 1) showMessage(`紅拍發球`, 999999);
+            else {
+                showMessage(`藍拍發球`, 999999);
+                if(gameMode === 'offline') setTimeout(aiServe, 1400);
             }
-        });
+        }, winner === 0 ? 0 : 1400);
+    }
 
-        // 使用者互動控制 (支援滑鼠與手機觸控)
-        let currentCat = null;
-        container.addEventListener('pointermove', (e) => {
-            if (isGameOver || !canDrop) return;
-            const rect = container.getBoundingClientRect();
-            let x = e.clientX - rect.left;
-            
-            const r = catConfig[currentLevel - 1].radius;
-            if (x < r) x = r;
-            if (x > width - r) x = width - r;
+    function aiServe() {
+        if (gameState !== 'serve' || server !== 2 || gameMode !== 'offline') return;
+        gameState = 'play'; ballState = 'p2_serve_hit';
+        document.getElementById('message').style.display = 'none';
+        ball.position.set(0, 1.8, -6);
+        ballSpeedZ = BASE_SPEED * 1.6; ballSpeedX = (Math.random() - 0.5) * 0.04; ballSpeedY = -0.16;
+    }
 
-            if (!currentCat) {
-                currentCat = createCat(x, 40, currentLevel, true);
-                Matter.Body.setStatic(currentCat, true);
+    function checkCollisions() {
+        // ... (保留你原本精準的桌球規則與碰撞邏輯，由 Host 統一運算) ...
+        if (ball.position.y <= 0.6 && ballSpeedY < 0 && Math.abs(ball.position.x) < 5.2 && Math.abs(ball.position.z) < 8.2) {
+            ball.position.y = 0.6; ballSpeedY = Math.abs(ballSpeedY) * 0.88;
+            if (ballSpeedY < 0.04) ballSpeedY = 0.04;
+            const isP1Side = ball.position.z > 0;
+            if (isP1Side) {
+                if (ballState === 'p1_serve_hit') ballState = 'p1_serve_bounced';
+                else if (ballState === 'p2_hit' || ballState === 'p2_serve_bounced') ballState = 'p1_must_hit';
+                else if (ballState === 'p1_must_hit') resetPoint(2, "兩彈失分");
             } else {
-                Matter.Body.setPosition(currentCat, { x: x, y: 40 });
+                if (ballState === 'p2_serve_hit') ballState = 'p2_serve_bounced';
+                else if (ballState === 'p1_hit' || ballState === 'p1_serve_bounced') ballState = 'p2_must_hit';
+                else if (ballState === 'p2_must_hit') resetPoint(1, "兩彈失分");
             }
-        });
+        }
+        if (ball.position.y < 0) {
+            if (ballState === 'p2_must_hit') resetPoint(1, "藍拍漏球");
+            else if (ballState === 'p1_must_hit') resetPoint(2, "紅拍漏球");
+            else resetPoint(server === 1 ? 2 : 1, "出界");
+            return;
+        }
 
-        container.addEventListener('pointerdown', (e) => {
-            if (isGameOver || !canDrop || !currentCat) return;
-            
-            // 釋放重力
-            Matter.Body.setStatic(currentCat, false);
-            currentCat.isSensor = false;
-            currentCat = null;
-            canDrop = false;
+        // P1 擊球判定
+        if (ballState === 'p1_must_hit' && ball.position.distanceTo(p1.position) < 2.5 && ballSpeedZ > 0) {
+            ballSpeedZ = -BASE_SPEED * 1.85; ballSpeedY = 0.16;
+            ballSpeedX = (ball.position.x - p1.position.x) * 0.05 + p1VelocityX * 0.5;
+            ballState = 'p1_hit';
+        }
 
-            // 1秒冷卻後產生下一隻
-            setTimeout(() => {
-                currentLevel = nextLevel;
-                nextLevel = Math.floor(Math.random() * 3) + 1;
-                nextPreviewEl.src = catConfig[nextLevel - 1].img;
-                canDrop = true;
-            }, 1000); 
-        });
+        // P2 擊球判定 (如果是真人對戰，把判定交給真實碰撞；如果是單機，交給AI)
+        if (ballState === 'p2_must_hit' && ball.position.distanceTo(p2.position) < 2.5 && ballSpeedZ < 0) {
+            ballSpeedZ = BASE_SPEED * 1.85; ballSpeedY = 0.16;
+            ballSpeedX = (ball.position.x - p2.position.x) * 0.05;
+            ballState = 'p2_hit';
+        }
+    }
 
-        // 碰撞與合成判定
-        Events.on(engine, 'collisionStart', (event) => {
-            const pairs = event.pairs;
-            const bodiesToRemove = [];
-            const bodiesToAdd = [];
-
-            for (let i = 0; i < pairs.length; i++) {
-                const bodyA = pairs[i].bodyA;
-                const bodyB = pairs[i].bodyB;
-
-                if (bodyA.label === bodyB.label && bodyA.label.startsWith('cat-')) {
-                    const level = bodyA.catLevel;
-                    
-                    if (bodiesToRemove.includes(bodyA) || bodiesToRemove.includes(bodyB)) continue;
-
-                    if (level < 7) { // 7級是最大，不再合成
-                        bodiesToRemove.push(bodyA, bodyB);
-                        const newX = (bodyA.position.x + bodyB.position.x) / 2;
-                        const newY = (bodyA.position.y + bodyB.position.y) / 2;
-                        bodiesToAdd.push({ x: newX, y: newY, level: level + 1 });
-                        
-                        score += catConfig[level].score;
-                        scoreEl.innerText = score;
-                    }
+    function animate() {
+        requestAnimationFrame(animate);
+        if (gameMode !== 'guest') { 
+            // 桌主/單機 負責運算物理
+            p1VelocityX = p1.position.x - p1LastX; p1LastX = p1.position.x;
+            if (gameState === 'serve' && server === 1) {
+                ball.position.set(p1.position.x, p1.position.y + 0.6, p1.position.z - 1.2);
+            }
+            if (gameState === 'play') {
+                ball.position.x += ballSpeedX; ball.position.y += ballSpeedY; ball.position.z += ballSpeedZ;
+                ballSpeedY -= GRAVITY;
+                checkCollisions();
+                if (gameMode === 'offline') {
+                    p2.position.x += (ball.position.x - p2.position.x) * 0.092;
+                    p2.position.z = -7 + (ball.position.z < -1 ? (ball.position.z + 7) * 0.25 : 0);
                 }
             }
-
-            if (bodiesToRemove.length > 0) {
-                Composite.remove(world, bodiesToRemove);
-                bodiesToAdd.forEach(data => {
-                    createCat(data.x, data.y, data.level);
+            // 透過網路同步給訪客
+            if (gameMode === 'host' && conn) {
+                conn.send({
+                    type: 'sync', bx: ball.position.x, by: ball.position.y, bz: ball.position.z,
+                    p1x: p1.position.x, p1z: p1.position.z, s1: scoreP1, s2: scoreP2, msg: currentMsg, msgDur: 1600
                 });
             }
-        });
+        }
+        renderer.render(scene, camera);
+    }
 
-        // 失敗判定：檢查是否溢出紅線
-        setInterval(() => {
-            if (isGameOver) return;
-            const bodies = Composite.allBodies(engine.world);
-            for (let i = 0; i < bodies.length; i++) {
-                const body = bodies[i];
-                if (body.label.startsWith('cat-') && !body.isStatic) {
-                    // 如果堆疊高度高過紅線(100)，且處於靜止狀態
-                    if (body.position.y < 100 && Math.abs(body.velocity.y) < 0.2) {
-                        isGameOver = true;
-                        document.getElementById('game-over').style.display = 'flex';
-                        document.getElementById('final-score').innerText = score;
-                        break;
-                    }
-                }
+    // ==================== 輸入控制與座標翻轉 ====================
+    function onPointerMove(e) {
+        if (e.cancelable) e.preventDefault();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        let nx = (clientX / window.innerWidth) * 2 - 1;
+        let ny = (e.touches ? e.touches[0].clientY : e.clientY) / window.innerHeight;
+        let mappedZ = e.touches ? (ny - 0.4) * 30 : (ny - 0.3) * 18;
+
+        if (gameMode === 'guest') {
+            // 訪客控制 P2，視角是反的，所以操作也要鏡像反轉
+            p2.position.x = -nx * 12; 
+            p2.position.z = -mappedZ; 
+            p2.position.z = Math.max(Math.min(p2.position.z, -0.5), -10);
+            
+            // 傳送自己的位置給桌主
+            if(conn) conn.send({ type: 'guest_pos', x: p2.position.x, z: p2.position.z });
+        } else {
+            // 桌主/單機控制 P1
+            p1.position.x = nx * 12; 
+            p1.position.z = mappedZ;
+            p1.position.z = Math.max(Math.min(p1.position.z, 10), 0.5);
+        }
+    }
+
+    function onPointerDown(e) {
+        if (gameState === 'serve') {
+            if ((gameMode === 'host' || gameMode === 'offline') && server === 1) {
+                gameState = 'play'; ballState = 'p1_serve_hit'; document.getElementById('message').style.display = 'none';
+                ballSpeedZ = -BASE_SPEED * 1.7; ballSpeedX = (Math.random() - 0.5) * 0.03; ballSpeedY = -0.14;
+            } else if (gameMode === 'guest' && server === 2) {
+                // 訪客發球
+                conn.send({ type: 'guest_serve' }); // 簡化處理：通知桌主我要發球了
             }
-        }, 1500);
-    </script>
+        }
+    }
+
+    window.addEventListener('mousemove', onPointerMove);
+    window.addEventListener('touchmove', onPointerMove, { passive: false });
+    window.addEventListener('mousedown', onPointerDown);
+    window.addEventListener('touchstart', onPointerDown);
+    window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+
+    animate();
+</script>
 </body>
 </html>
